@@ -63,21 +63,20 @@ void run_build_script(const string &build_script, const string &target) {
 }
 
 int main(int argc, char* argv[]) {
-    if (argc != 2) {
+    if (argc < 2) {
         cerr << "Wrong arguments" << endl;
         return 1;
     }
 
-    string target = argv[1];
+    for (int i = 1; i < argc; i++) {
+        string target(argv[i]);
 
-    auto build_script = define_build_script(target);
-
-
-    if (auto build_script = define_build_script(target)) {
-        cout << "Current build script: " << *build_script << endl;
-        run_build_script(*build_script, target);
-    } else {
-        cerr << "Can't find build script" << endl;
+        if (auto build_script = define_build_script(target)) {
+            cout << "Current build script: " << *build_script << endl;
+            run_build_script(*build_script, target);
+        } else {
+            cerr << "Can't find build script" << endl;
+        }
     }
 
     return 0;
