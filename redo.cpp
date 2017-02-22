@@ -3,6 +3,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <experimental/optional>
+#include <unistd.h>
 
 using namespace std;
 using namespace std::experimental;
@@ -26,16 +27,37 @@ optional<string> define_build_script(const string &target) {
     return {};
 }
 
+string getcwd() {
+    char buf[FILENAME_MAX];
+    char* succ = getcwd(buf, FILENAME_MAX);
+
+    if (succ) {
+        return string(succ);
+    }
+
+    return "";
+}
+
 string basename(const string &name) {
     auto const pos = name.find_last_of('.');
 
     return name.substr(0, pos);
 }
 
+pair<string, string> split_filename(const string &path) {
+    auto const pos = path.find_last_of('/');
+
+    if (pos == -1) {
+        return make_pair("./", path);
+    }
+
+    return make_pair(path.substr(0, pos), path.substr(pos + 1));
+}
+
 optional<string> extension(const string &file) {
     auto const pos = file.find_last_of('.');
 
-    if (pos != file.length()) {
+    if (pos != -1) {
         return file.substr(pos + 1);
     }
 
@@ -68,15 +90,32 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    auto topdir = getcwd();
+    cerr << "Top directory: " << topdir << endl;
+
     for (int i = 1; i < argc; i++) {
         string target(argv[i]);
+        string dir, filename;
+        tie(dir, filename) = split_filename(target);
 
-        if (auto build_script = define_build_script(target)) {
-            cout << "Current build script: " << *build_script << endl;
-            run_build_script(*build_script, target);
+        cerr << "dir: " << dir << endl << "filename: " << filename << endl;
+
+        if (chdir(dir.c_str()) == 0) {
+            cerr << "Directory changed to " << getcwd() << endl;
+        } else {
+            cerr << "Couldn't change directory" << endl;
+            return 1;
+        }
+
+        if (auto build_script = define_build_script(filename)) {
+            cerr << "Current build script: " << *build_script << endl;
+            run_build_script(*build_script, filename);
         } else {
             cerr << "Can't find build script" << endl;
+            return 1;
         }
+
+        chdir(topdir.c_str());
     }
 
     return 0;
