@@ -4,6 +4,8 @@
 #include <cstdlib>
 #include <experimental/optional>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <errno.h>
 
 using namespace std;
 using namespace std::experimental;
@@ -84,6 +86,43 @@ void run_build_script(const string &build_script, const string &target) {
     }
 }
 
+int create_deps_file(const string &target, const string &deps_path) {
+    // to be implemented
+}
+
+int change_directory(const string &dir) {
+    if (chdir(dir.c_str()) == 0) {
+        cerr << "Directory changed to " << getcwd() << endl;
+        return 0;
+    } else {
+        cerr << "Couldn't change directory" << endl;
+        return 1;
+    }
+}
+
+int dir_exist(const string& path)
+{
+    struct stat info;
+    if (stat(path.c_str(), &info) != 0)
+    {
+        return 1;
+    }
+    return (info.st_mode & S_IFDIR) == 0;
+}
+
+int create_path(const string& path)
+{
+    mode_t mode = 0755;
+    int ret = mkdir(path.c_str(), mode);
+
+    if (ret == 0) {
+        return 0;
+    } else {
+        cerr << "Create path errno: " << errno << endl;
+        return 1;
+    }
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         cerr << "Wrong arguments" << endl;
@@ -100,11 +139,23 @@ int main(int argc, char* argv[]) {
 
         cerr << "dir: " << dir << endl << "filename: " << filename << endl;
 
-        if (chdir(dir.c_str()) == 0) {
-            cerr << "Directory changed to " << getcwd() << endl;
-        } else {
-            cerr << "Couldn't change directory" << endl;
+        if (change_directory(dir) == 1) {
             return 1;
+        }
+
+        string path_to_deps = "./.redo/" + filename ;
+
+        if (dir_exist("./.redo") != 0) {
+            create_path("./.redo");
+        }
+
+        if (dir_exist(path_to_deps) != 0) {
+            if (create_path(path_to_deps) == 0) {
+                cerr << "Path successfyly created: " << path_to_deps << endl;
+            } else {
+                cerr << "Can't create path: " << path_to_deps << endl;
+                return 1;
+            }
         }
 
         if (auto build_script = define_build_script(filename)) {
@@ -115,7 +166,9 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        chdir(topdir.c_str());
+        if (change_directory(topdir) == 1) {
+            return 1;
+        }
     }
 
     return 0;
