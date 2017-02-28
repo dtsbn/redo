@@ -1,14 +1,19 @@
-#include <iostream>
 #include <vector>
+#include <iostream>
 #include <fstream>
 #include <cstdlib>
 #include <experimental/optional>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <sstream>
+
+#include <openssl/md5.h>
 
 using namespace std;
 using namespace std::experimental;
+
+int write_dep(const string &target, const string &deps_path);
 
 optional<string> extension(const string &file);
 string basename(const string &name);
@@ -56,7 +61,7 @@ pair<string, string> split_filename(const string &path) {
     return make_pair(path.substr(0, pos), path.substr(pos + 1));
 }
 
-optional<string> extension(const string &file) {
+optional<string> extension(const string &file) { // return file extension
     auto const pos = file.find_last_of('.');
 
     if (pos != -1) {
@@ -67,6 +72,10 @@ optional<string> extension(const string &file) {
 }
 
 void run_build_script(const string &build_script, const string &target) {
+    if (write_dep(target, build_script) != 0) {
+        cerr << "Can't create deps metainfo file" << endl;
+    }
+
     const string tmpfile_name(target + ".tmp");
     const string command = "sh -e " + build_script + " " + target + " " + basename(target) + " " + tmpfile_name;
 
@@ -86,10 +95,6 @@ void run_build_script(const string &build_script, const string &target) {
     }
 }
 
-int create_deps_file(const string &target, const string &deps_path) {
-    // to be implemented
-}
-
 int change_directory(const string &dir) {
     if (chdir(dir.c_str()) == 0) {
         cerr << "Directory changed to " << getcwd() << endl;
@@ -100,8 +105,7 @@ int change_directory(const string &dir) {
     }
 }
 
-int dir_exist(const string& path)
-{
+int dir_exist(const string& path) {
     struct stat info;
     if (stat(path.c_str(), &info) != 0)
     {
@@ -110,17 +114,65 @@ int dir_exist(const string& path)
     return (info.st_mode & S_IFDIR) == 0;
 }
 
-int create_path(const string& path)
-{
+int create_path(const string& path) {
     mode_t mode = 0755;
     int ret = mkdir(path.c_str(), mode);
 
     if (ret == 0) {
         return 0;
     } else {
+        cerr << "Can't create path: " << path << endl;
         cerr << "Create path errno: " << errno << endl;
         return 1;
     }
+}
+
+string file_md5(const string& path) {
+    if (auto fs = ifstream(path, ios::binary | ios::ate)) {
+        long filesize = fs.tellg();
+        // TODO: handle fileopen exception
+        char buf[filesize];
+        unsigned char md5_result[MD5_DIGEST_LENGTH];
+
+        fs.seekg(0);
+        fs.read(buf, filesize);
+
+        MD5((unsigned char*)buf, filesize, md5_result);
+
+        stringbuf buffer;
+        ostream os(&buffer);
+
+        for (int i = 0; i < MD5_DIGEST_LENGTH; i++) {
+            os << hex << (int)md5_result[i];
+        }
+
+        return buffer.str();
+    } else {
+        cerr << "Can't open file to calculate md5: " << path << endl;
+        return NULL;
+    }
+}
+
+int write_dep(const string &target, const string &deps_path) {
+    if (dir_exist("./.redo") != 0) {
+        if (create_path("./.redo") != 0) {
+            return 1;
+        }
+    }
+
+    if (dir_exist("./.redo/" + target) != 0) {
+        if (create_path("./.redo/" + target) != 0) {
+            return 1;
+        }
+    }
+
+    string deps_metainfo_path = ".redo/" + target + "/" + file_md5(deps_path);
+    cerr << "Creating file " + deps_metainfo_path << endl;
+    ofstream myfile(deps_metainfo_path);
+    myfile << deps_path << endl;
+    myfile.close();
+
+    return 0;
 }
 
 int main(int argc, char* argv[]) {
@@ -143,23 +195,10 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        string path_to_deps = "./.redo/" + filename ;
-
-        if (dir_exist("./.redo") != 0) {
-            create_path("./.redo");
-        }
-
-        if (dir_exist(path_to_deps) != 0) {
-            if (create_path(path_to_deps) == 0) {
-                cerr << "Path successfyly created: " << path_to_deps << endl;
-            } else {
-                cerr << "Can't create path: " << path_to_deps << endl;
-                return 1;
-            }
-        }
-
         if (auto build_script = define_build_script(filename)) {
             cerr << "Current build script: " << *build_script << endl;
+            cerr << "Calculate md5 of buildscript: " << file_md5(*build_script) << endl;
+
             run_build_script(*build_script, filename);
         } else {
             cerr << "Can't find build script" << endl;
