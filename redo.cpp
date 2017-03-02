@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <sstream>
+#include <dirent.h>
 
 #include <openssl/md5.h>
 
@@ -77,11 +78,12 @@ void run_build_script(const string &build_script, const string &target) {
     }
 
     const string tmpfile_name(target + ".tmp");
-    const string command = "sh -e " + build_script + " " + target + " " + basename(target) + " " + tmpfile_name;
+    const string command = "REDO_TARGET=" + target + " sh -e -x " + build_script + " " + target + " " + basename(target) + " " + tmpfile_name;
 
     cerr << "Run build script command: " << command << endl;
 
     cerr << "redo " + target << endl;
+
     if (std::system(command.c_str()) == 0) {
         cerr << "Running build script: success" << endl;
 
@@ -175,6 +177,51 @@ int write_dep(const string &target, const string &deps_path) {
     return 0;
 }
 
+int delete_dir(const string& path) {
+    std::system(("rm -r ./" + path).c_str());
+    return 1;
+}
+
+bool upto_date(const string& target) {
+    DIR* dir = opendir((".redo/" + target).c_str());
+
+    if (dir == NULL) {
+        return false;
+    }
+
+    while (auto dp = readdir(dir)) {
+        string filename(dp->d_name, dp->d_namlen);
+
+        if (filename == "." || filename == "..") {
+            continue;
+        }
+
+        if (auto fs = ifstream(".redo/" + target + "/" + filename, ios::binary | ios::ate)) {
+            long filesize = fs.tellg();
+            char buf[filesize];
+
+            fs.seekg(0);
+            fs.read(buf, filesize);
+
+            string dep_filename = string(buf, filesize-1);
+            if (filename != file_md5(dep_filename)) {
+                return false;
+            }
+
+            if (auto build_script = define_build_script(dep_filename)) {
+                if (!upto_date(dep_filename)) {
+                    closedir(dir);
+                    return false;
+                }
+            }
+        } else {
+            return false;
+        }
+    }
+    closedir(dir);
+    return true;
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         cerr << "Wrong arguments" << endl;
@@ -189,20 +236,35 @@ int main(int argc, char* argv[]) {
         string dir, filename;
         tie(dir, filename) = split_filename(target);
 
+        cerr << "target: " << target << endl;
         cerr << "dir: " << dir << endl << "filename: " << filename << endl;
 
         if (change_directory(dir) == 1) {
             return 1;
         }
 
+        if (upto_date(target)) {
+            cerr << "upto_date" << endl;
+            continue;
+        } else {
+            cerr << "upto_date == false" << endl;
+        }
+
+        if (delete_dir(".redo/" + target) != 0) {
+            cerr << "Can't delete directory: " << ".redo/" + target << endl;
+        }
+
         if (auto build_script = define_build_script(filename)) {
             cerr << "Current build script: " << *build_script << endl;
             cerr << "Calculate md5 of buildscript: " << file_md5(*build_script) << endl;
-
             run_build_script(*build_script, filename);
-        } else {
-            cerr << "Can't find build script" << endl;
-            return 1;
+        }
+
+        if (ifstream(filename)) {
+            if (char* target = getenv("REDO_TARGET")) {
+                cerr << "PARENT_TARGET: " << target << endl;
+                write_dep(target, filename);
+            }
         }
 
         if (change_directory(topdir) == 1) {
