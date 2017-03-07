@@ -243,28 +243,25 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        if (upto_date(target)) {
-            cerr << "upto_date" << endl;
-            continue;
+        if (!upto_date(target)) {
+            if (delete_dir(".redo/" + target) != 0) {
+                cerr << "Can't delete directory: " << ".redo/" + target << endl;
+            }
+
+            if (auto build_script = define_build_script(filename)) {
+                cerr << "Current build script: " << *build_script << endl;
+                cerr << "Calculate md5 of buildscript: " << file_md5(*build_script) << endl;
+                run_build_script(*build_script, filename);
+            }
+
+            if (ifstream(filename)) {
+                if (char* target = getenv("REDO_TARGET")) {
+                    cerr << "PARENT_TARGET: " << target << endl;
+                    write_dep(target, filename);
+                }
+            }
         } else {
             cerr << "upto_date == false" << endl;
-        }
-
-        if (delete_dir(".redo/" + target) != 0) {
-            cerr << "Can't delete directory: " << ".redo/" + target << endl;
-        }
-
-        if (auto build_script = define_build_script(filename)) {
-            cerr << "Current build script: " << *build_script << endl;
-            cerr << "Calculate md5 of buildscript: " << file_md5(*build_script) << endl;
-            run_build_script(*build_script, filename);
-        }
-
-        if (ifstream(filename)) {
-            if (char* target = getenv("REDO_TARGET")) {
-                cerr << "PARENT_TARGET: " << target << endl;
-                write_dep(target, filename);
-            }
         }
 
         if (change_directory(topdir) == 1) {
