@@ -253,7 +253,9 @@ int main(int argc, char* argv[]) {
                 cerr << "Calculate md5 of buildscript: " << file_md5(*build_script) << endl;
                 run_build_script(*build_script, filename);
             }
+        //}
 
+        //if (string(argv[0]) == "redo-ifchange") {
             if (ifstream(filename)) {
                 if (char* target = getenv("REDO_TARGET")) {
                     cerr << "PARENT_TARGET: " << target << endl;
